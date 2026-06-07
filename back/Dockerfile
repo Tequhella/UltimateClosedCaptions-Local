@@ -1,12 +1,12 @@
 
-FROM node:18-alpine3.18 as base
+FROM docker.io/library/node:18-alpine3.18 as base
 
 # Needed if Azure speech to text is enabled
 # RUN apk add --no-cache ffmpeg
 
 WORKDIR /app
 
-RUN corepack enable
+RUN npm install -g pnpm@8
 
 #copy config
 COPY *.json pnpm-lock.yaml ./

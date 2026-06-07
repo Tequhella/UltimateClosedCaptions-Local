@@ -54,27 +54,27 @@ export function useSocket(connect: boolean) {
         socket.emit('text', transcript);
     }, []);
 
-    /*
-    // Handle sending audio as stream
-    function handleAudioStart() {
+    const audioStart = useCallback(() => {
         socket.emit('audioStart');
-    }
+    }, []);
 
-    function handleAudioEnd() {
+    const audioEnd = useCallback(() => {
         socket.emit('audioEnd');
-    }
+    }, []);
 
-    function handleAudioData(data: Blob) {
+    const audioData = useCallback((data: Blob) => {
         socket.emit('audioData', data);
-    }
-    */
+    }, []);
 
     return {
-            socket,
-            info,
-            captionsStatus,
-            translateLangs,
-            reloadConfig,
-            handleText,
+        socket,
+        info,
+        captionsStatus,
+        translateLangs,
+        reloadConfig,
+        handleText,
+        audioStart,
+        audioData,
+        audioEnd,
     };
 }

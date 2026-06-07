@@ -45,14 +45,14 @@ services:
       - ADMINS_TWITCHID=${ADMINS_TWITCHID}
 
   captionsredis:
-    image: redis:7
+    image: docker.io/library/redis:7
     container_name: captions-redis
     restart: unless-stopped
     networks:
       - default
 
   captionsdb:
-    image: mongo
+    image: docker.io/library/mongo
     container_name: captions-db
     restart: unless-stopped
     networks:
