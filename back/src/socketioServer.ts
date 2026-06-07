@@ -25,11 +25,10 @@ interface ServerToClientEvents {
 interface ClientToServerEvents {
 	reloadConfig: () => void;
 	text: (text: TranscriptData) => void;
-	/*
 	audioStart: ()  => void;
 	audioData: (data: Buffer)  => void;
 	audioEnd: ()  => void;
-	*/
+
 }
 
 export interface SocketData {
@@ -308,6 +307,25 @@ io.on('connect', (socket) => {
 				socket.data.loading = loadConfig(socket);
 				socket.data.loading.catch(e=>logger.error('Error reloading config', e));
 			}
+		});
+
+		socket.on('audioStart', () => {
+				logger.info(`[local-audio] start for ${ socket.data.twitchId }`);
+		});
+
+		socket.on('audioData', (data: Buffer | ArrayBuffer) => {
+				const size =
+						Buffer.isBuffer(data)
+								? data.length
+								: data instanceof ArrayBuffer
+										? data.byteLength
+										: 0;
+
+				logger.info(`[local-audio] chunk received: ${ size } bytes`);
+		});
+
+		socket.on('audioEnd', () => {
+				logger.info(`[local-audio] end for ${ socket.data.twitchId }`);
 		});
 
 		socket.on('text', async (captions) =>{
