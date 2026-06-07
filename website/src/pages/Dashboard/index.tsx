@@ -23,12 +23,14 @@ import Webhooks from '../../components/Webhooks';
 import DashboardTabs from '../../components/DashboardTabs';
 import Guide from '../../components/Guide';
 import BanWords from '../../components/BanWords';
-import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+//import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useSavedConfig } from '../../hooks/useSavedConfig';
 import { useAuthCheck } from '../../hooks/useAuthCheck';
 import { useObsWebsocket } from '../../hooks/useObsWebsocket';
 import { useObsSendCaptions } from '../../hooks/useObsSendCaptions';
 import OBS from '../../components/OBS';
+
+import { useLocalAudioCapture } from '../../hooks/useLocalAudioCapture';
 
 interface UserConfig {
 	spokenLang: string
@@ -71,7 +73,13 @@ function Dashboard() {
     const delay = 1000 + (config.customDelay??0);
     // Delay between each partial captions
     const splitDelay = Math.max(2700, delay);
-    const { error: recognitionErrror, text } = useSpeechRecognition({handleText: socketCtx.handleText, lang: config.spokenLang, listening, splitDelay, delay});
+    //const { error: recognitionErrror, text } = useSpeechRecognition({handleText: socketCtx.handleText, lang: config.spokenLang, listening, splitDelay, delay});
+    const { error: recognitionErrror, text } = useLocalAudioCapture({
+        listening,
+        audioStart: socketCtx.audioStart,
+        audioData: socketCtx.audioData,
+        audioEnd: socketCtx.audioEnd,
+    });
 
     const censor = useCallback((inputText: string, banWords: string[]) => {
         // Apply ban words
