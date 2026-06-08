@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+const SEGMENT_MS = 5000;
+
 export function useLocalAudioCapture({
     listening,
     audioStart,
@@ -13,57 +15,92 @@ export function useLocalAudioCapture({
 }) {
     const [error, setError] = useState<string>();
     const [text, setText] = useState<string>("");
-    const recorderRef = useRef<MediaRecorder | null>(null);
+
     const streamRef = useRef<MediaStream | null>(null);
+    const recorderRef = useRef<MediaRecorder | null>(null);
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const stoppedRef = useRef<boolean>(true);
 
     useEffect(() => {
-        let cancelled = false;
-
-        async function start() {
+        async function startCapture() {
             try {
                 setError(undefined);
                 setText("Micro local actif");
+                stoppedRef.current = false;
 
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        channelCount: 1,
+                    },
                 });
-
-                if (cancelled) {
-                    stream.getTracks().forEach(track => track.stop());
-                    return;
-                }
 
                 streamRef.current = stream;
-
-                const recorder = new MediaRecorder(stream, {
-                    mimeType: "audio/webm",
-                });
-
-                recorderRef.current = recorder;
-
-                recorder.ondataavailable = event => {
-                    if (event.data && event.data.size > 0) {
-                        audioData(event.data);
-                    }
-                };
-
-                recorder.onerror = event => {
-                    console.error("MediaRecorder error", event);
-                    setError("Erreur MediaRecorder");
-                };
-
                 audioStart();
 
-                // Envoie un morceau audio toutes les 500 ms
-                recorder.start(500);
+                startSegment(stream);
             } catch (e) {
                 console.error("Local audio capture error", e);
                 setError("Impossible d'accéder au micro local");
             }
         }
 
-        function stop() {
-            recorderRef.current?.stop();
+        function startSegment(stream: MediaStream) {
+            if (stoppedRef.current) return;
+
+            const chunks: Blob[] = [];
+
+            const recorder = new MediaRecorder(stream, {
+                mimeType: "audio/webm",
+            });
+
+            recorderRef.current = recorder;
+
+            recorder.ondataavailable = event => {
+                if (event.data && event.data.size > 0) {
+                    chunks.push(event.data);
+                }
+            };
+
+            recorder.onerror = event => {
+                console.error("MediaRecorder error", event);
+                setError("Erreur MediaRecorder");
+            };
+
+            recorder.onstop = () => {
+                if (chunks.length > 0) {
+                    const blob = new Blob(chunks, { type: "audio/webm" });
+                    audioData(blob);
+                }
+
+                if (!stoppedRef.current && streamRef.current) {
+                    startSegment(streamRef.current);
+                }
+            };
+
+            recorder.start();
+
+            timerRef.current = setTimeout(() => {
+                if (recorder.state === "recording") {
+                    recorder.stop();
+                }
+            }, SEGMENT_MS);
+        }
+
+        function stopCapture() {
+            stoppedRef.current = true;
+
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+                timerRef.current = null;
+            }
+
+            if (recorderRef.current?.state === "recording") {
+                recorderRef.current.stop();
+            }
+
             recorderRef.current = null;
 
             streamRef.current?.getTracks().forEach(track => track.stop());
@@ -74,14 +111,13 @@ export function useLocalAudioCapture({
         }
 
         if (listening) {
-            start();
+            startCapture();
         } else {
-            stop();
+            stopCapture();
         }
 
         return () => {
-            cancelled = true;
-            stop();
+            stopCapture();
         };
     }, [listening, audioStart, audioData, audioEnd]);
 

@@ -11,8 +11,6 @@ import { eventsub } from "./twitch/events";
 import { z } from "zod";
 import { metrics } from "./utils/metrics";
 import { applyBanwords } from "./utils/functions";
-import { createWriteStream, WriteStream } from "fs";
-import { readFile } from "fs/promises";
 
 
 
@@ -71,12 +69,9 @@ const transcriptDataSchema = z.object({
 	lang: z.string().min(1)
 });
 
-const localAudioBuffers = new Map<string, Buffer[]>();
-const localAudioTimers = new Map<string, ReturnType<typeof setInterval>>();
 const localAudioBusy = new Map<string, boolean>();
 
-const LOCAL_STT_INTERVAL_MS = 5000;
-const LOCAL_STT_MIN_BYTES = 20_000;
+const SEGMENT_MS = 10000;
 
 async function loadConfig(socket: TypedSocket) {
 	try{
@@ -183,6 +178,73 @@ async function sendStatus(socket: TypedSocket) {
 		twitch: await isExtensionInstalled(socket.data.twitchId)
 	});
 }
+
+async function transcribeLocalAudioSegment(socket: TypedSocket, buffer: Buffer) {
+	try {
+		const health = await fetch('http://local-stt:5005/health');
+		if (!health.ok) {
+			logger.warn(`[local-stt-client] local-stt not ready yet`);
+			return;
+		}
+	} catch (e) {
+		logger.warn(`[local-stt-client] local-stt not reachable yet`);
+		return;
+	}
+
+	if (buffer.length < 20_000) {
+		logger.info(`[local-stt-client] segment too small: ${buffer.length} bytes`);
+		return;
+	}
+
+	if (localAudioBusy.get(socket.id)) {
+		logger.info(`[local-stt-client] transcription already running for ${socket.data.twitchId}, dropping segment`);
+		return;
+	}
+
+	localAudioBusy.set(socket.id, true);
+
+	try {
+		logger.info(`[local-stt-client] sending complete segment ${buffer.length} bytes to local-stt`);
+
+		const form = new FormData();
+		const blob = new Blob([buffer], { type: 'audio/webm' });
+		form.append('audio', blob, 'audio.webm');
+
+		const res = await fetch('http://local-stt:5005/transcribe', {
+			method: 'POST',
+			body: form,
+		});
+
+		logger.info(`[local-stt-client] response status ${res.status}`);
+
+		if (!res.ok) {
+			const body = await res.text();
+			logger.warn(`[local-stt-client] bad response: ${body}`);
+			return;
+		}
+
+		const json = await res.json();
+		logger.info(`[local-stt-client] response ${JSON.stringify(json)}`);
+
+		const text = typeof json.text === 'string' ? json.text.trim() : '';
+
+		if (text) {
+			await handleTranscript(socket, {
+				text,
+				lang: 'fr',
+				final: true,
+				lineEnd: true,
+				delay: 0,
+				duration: 5000,
+			});
+		}
+	} catch (e) {
+		logger.error('[local-stt-client] failed to transcribe audio', e);
+	} finally {
+		localAudioBusy.set(socket.id, false);
+	}
+}
+
 
 async function handleTranscript(socket: TypedSocket, transcript: TranscriptData) {
 	const start = Date.now();
@@ -306,13 +368,6 @@ io.on('connect', (socket) => {
 		}));
 
 		socket.on('disconnect', () => {
-			const timer = localAudioTimers.get(socket.id);
-			if (timer) {
-				clearInterval(timer);
-				localAudioTimers.delete(socket.id);
-			}
-
-			localAudioBuffers.delete(socket.id);
 			localAudioBusy.delete(socket.id);
 
 			endSession(socket);
@@ -330,47 +385,20 @@ io.on('connect', (socket) => {
 
 		socket.on('audioStart', () => {
 			logger.info(`[local-audio] start for ${socket.data.twitchId}`);
-
-			localAudioBuffers.set(socket.id, []);
-
-			const oldTimer = localAudioTimers.get(socket.id);
-			if (oldTimer) {
-				clearInterval(oldTimer);
-			}
-
-			const timer = setInterval(() => {
-				transcribeLocalAudio(socket).catch(e => {
-					logger.error('[local-stt-client] interval transcription failed', e);
-				});
-			}, LOCAL_STT_INTERVAL_MS);
-
-			localAudioTimers.set(socket.id, timer);
 		});
 
-		socket.on('audioData', (data: Buffer | ArrayBuffer | Uint8Array) => {
+		socket.on('audioData', async (data: Buffer | ArrayBuffer | Uint8Array) => {
 			const buffer = Buffer.isBuffer(data)
 				? data
 				: Buffer.from(data);
 
-			const chunks = localAudioBuffers.get(socket.id) ?? [];
-			chunks.push(buffer);
-			localAudioBuffers.set(socket.id, chunks);
+			logger.info(`[local-audio] complete segment received: ${buffer.length} bytes`);
 
-			logger.info(`[local-audio] chunk received: ${buffer.length} bytes, buffered chunks: ${chunks.length}`);
+			await transcribeLocalAudioSegment(socket, buffer);
 		});
 
-		socket.on('audioEnd', async () => {
+		socket.on('audioEnd', () => {
 			logger.info(`[local-audio] end for ${socket.data.twitchId}`);
-
-			const timer = localAudioTimers.get(socket.id);
-			if (timer) {
-				clearInterval(timer);
-				localAudioTimers.delete(socket.id);
-			}
-
-			await transcribeLocalAudio(socket, true);
-
-			localAudioBuffers.delete(socket.id);
 			localAudioBusy.delete(socket.id);
 		});
 
@@ -430,69 +458,3 @@ export function registerTwitchAutoStop(twitchId: string) {
 	});
 }
 
-async function transcribeLocalAudio(socket: TypedSocket, final = false) {
-	const chunks = localAudioBuffers.get(socket.id) ?? [];
-
-	if (!chunks.length) {
-		if (final) {
-			logger.info(`[local-stt-client] no audio chunks for ${socket.data.twitchId}`);
-		}
-		return;
-	}
-
-	if (localAudioBusy.get(socket.id)) {
-		logger.info(`[local-stt-client] transcription already running for ${socket.data.twitchId}, keeping buffer`);
-		return;
-	}
-
-	const buffer = Buffer.concat(chunks);
-
-	if (!final && buffer.length < LOCAL_STT_MIN_BYTES) {
-		logger.info(`[local-stt-client] buffer too small: ${buffer.length} bytes`);
-		return;
-	}
-
-	localAudioBusy.set(socket.id, true);
-	localAudioBuffers.set(socket.id, []);
-
-	try {
-		logger.info(`[local-stt-client] sending ${buffer.length} bytes to local-stt`);
-
-		const form = new FormData();
-		const blob = new Blob([buffer], { type: 'audio/webm' });
-		form.append('audio', blob, 'audio.webm');
-
-		const res = await fetch('http://local-stt:5005/transcribe', {
-			method: 'POST',
-			body: form,
-		});
-
-		logger.info(`[local-stt-client] response status ${res.status}`);
-
-		if (!res.ok) {
-			const body = await res.text();
-			logger.warn(`[local-stt-client] bad response: ${body}`);
-			return;
-		}
-
-		const json = await res.json();
-		logger.info(`[local-stt-client] response ${JSON.stringify(json)}`);
-
-		const text = typeof json.text === 'string' ? json.text.trim() : '';
-
-		if (text) {
-			await handleTranscript(socket, {
-				text,
-				lang: 'fr',
-				final: true,
-				lineEnd: true,
-				delay: 0,
-				duration: LOCAL_STT_INTERVAL_MS,
-			});
-		}
-	} catch (e) {
-		logger.error('[local-stt-client] failed to transcribe audio', e);
-	} finally {
-		localAudioBusy.set(socket.id, false);
-	}
-}

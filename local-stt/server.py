@@ -5,37 +5,43 @@ import os
 
 app = Flask(__name__)
 
-print("[local-stt] loading whisper model...")
-model = whisper.load_model("base")
-print("[local-stt] model loaded")
+print("[local-stt] loading whisper model...", flush=True)
+model = whisper.load_model("small")
+print("[local-stt] model loaded", flush=True)
+
+@app.get("/health")
+def health():
+    return {"ready": True}
 
 @app.post("/transcribe")
 def transcribe():
-    if "audio" not in request.files:
-        return jsonify({"error": "missing audio file"}), 400
+    audio = request.files.get("audio")
+    if audio is None:
+        return jsonify({"error": "missing audio"}), 400
 
-    audio = request.files["audio"]
-
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
-        path = f.name
-        audio.save(path)
+    fd, path = tempfile.mkstemp(suffix=".webm")
+    os.close(fd)
 
     try:
-        result = model.transcribe(path, language="fr")
-        text = (result.get("text") or "").strip()
-        return jsonify({
-            "text": text,
-            "lang": "fr"
-        })
+        audio.save(path)
+        print("[local-stt] transcribing ...", flush=True)
+
+        result = model.transcribe(
+            path,
+            language="fr",
+            task="transcribe",
+            fp16=False,
+            temperature=0,
+            condition_on_previous_text=False,
+            no_speech_threshold=0.6,
+        )
+
+        return jsonify({"text": result.get("text", "").strip()})
     finally:
         try:
             os.remove(path)
         except OSError:
             pass
 
-@app.get("/health")
-def health():
-    return jsonify({"ok": True})
-
-
-app.run(host="0.0.0.0", port=5005)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5005)
