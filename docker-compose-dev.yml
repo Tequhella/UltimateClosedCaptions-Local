@@ -26,6 +26,13 @@ services:
     volumes: 
       - 'captionsdb:/data/db'
 
+  local-stt:
+    build:
+      context: ./local-stt
+    container_name: captions-local-stt
+    ports:
+      - "5005:5005"
+
 volumes: 
   captionsdb:
     external: true

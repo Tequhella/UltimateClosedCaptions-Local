@@ -1,10 +1,10 @@
 
 FROM docker.io/library/node:18-alpine3.18 as base
 
-# Needed if Azure speech to text is enabled
-# RUN apk add --no-cache ffmpeg
-
 WORKDIR /app
+
+# Needed if Azure speech to text is enabled
+RUN apk add --no-cache ffmpeg
 
 RUN npm install -g pnpm@8
 
