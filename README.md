@@ -16,6 +16,15 @@ The code works but isn’t necessarily optimal, particularly in terms of React/U
 This is a working prototype / personal fork.  
 It was built quickly to solve a real streaming workflow, so expect rough edges.
 
+## Docker or Podman
+I use Podman, but the Dockerfiles should work with Docker as well.
+
+## Fix
+If you enconter rootless error, use this command :
+```bash
+./fix-rootless.sh
+```
+
 ---
 # UltimateClosedCaptions
 
