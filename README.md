@@ -1,3 +1,22 @@
+# UltimateClosedCaptions-Local-Translate
+This fork is an experimental modification of Ultimate Closed Captions designed to replace the browser’s speech recognition with a local Whisper server and Argos Translate.
+The main aim is to meet my personal needs for streaming, not to provide a production-ready integration.
+The code works but isn’t necessarily optimal, particularly in terms of React/UI and architecture. Contributions, fixes and refactoring are welcome.
+
+## Limitations
+
+- Local STT uses Whisper and may introduce latency depending on the model and CPU/GPU.
+- Local translation currently targets French → English.
+- Browser source translation currently requires `lang=en` in the URL.
+- The UI integration is minimal and may need cleanup.
+- This fork was made for personal streaming use first.
+
+## Project status
+
+This is a working prototype / personal fork.  
+It was built quickly to solve a real streaming workflow, so expect rough edges.
+
+---
 # UltimateClosedCaptions
 
 Closed captions extension for Twitch.
