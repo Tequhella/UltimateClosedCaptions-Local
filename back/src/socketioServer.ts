@@ -71,7 +71,122 @@ const transcriptDataSchema = z.object({
 
 const localAudioBusy = new Map<string, boolean>();
 
-const SEGMENT_MS = 10000;
+type CaptionTextBuffer = {
+	text: string;
+	lang: string;
+	firstAt: number;
+	timer?: ReturnType<typeof setTimeout>;
+};
+
+const captionTextBuffers = new Map<string, CaptionTextBuffer>();
+
+const CAPTION_BUFFER_MAX_MS = 3000;
+const CAPTION_BUFFER_MAX_CHARS = 220;
+
+function looksLikeSentenceEnd(text: string) {
+	return /[.!?…]$/.test(text.trim());
+}
+
+function joinCaptionText(a: string, b: string) {
+	return `${a.trim()} ${b.trim()}`
+		.replace(/\s+/g, ' ')
+		.replace(/\s+([,.!?…])/g, '$1')
+		.trim();
+}
+
+async function flushCaptionBuffer(socket: TypedSocket, reason: string) {
+	const buffer = captionTextBuffers.get(socket.id);
+	if(!buffer) return;
+
+	if(buffer.timer) {
+		clearTimeout(buffer.timer);
+	}
+
+	captionTextBuffers.delete(socket.id);
+
+	const text = buffer.text.trim();
+	if(!text) return;
+
+	logger.info(`[caption-buffer] flush ${reason}: ${text}`);
+
+	await handleTranscript(socket, {
+		text,
+		lang: buffer.lang,
+		final: true,
+		lineEnd: true,
+		delay: 0,
+		duration: Date.now() - buffer.firstAt,
+	});
+}
+
+function pushCaptionBuffer(socket: TypedSocket, fragment: string, lang = 'fr') {
+	fragment = fragment.trim();
+	if(!fragment) return;
+
+	const now = Date.now();
+
+	let buffer = captionTextBuffers.get(socket.id);
+
+	if(!buffer) {
+		buffer = {
+			text: fragment,
+			lang,
+			firstAt: now,
+		};
+		captionTextBuffers.set(socket.id, buffer);
+	}else{
+		buffer.text = joinCaptionText(buffer.text, fragment);
+		buffer.lang = lang;
+	}
+
+	if(buffer.timer) {
+		clearTimeout(buffer.timer);
+	}
+
+	const shouldFlush =
+		looksLikeSentenceEnd(buffer.text)
+		|| buffer.text.length >= CAPTION_BUFFER_MAX_CHARS
+		|| (now - buffer.firstAt) >= CAPTION_BUFFER_MAX_MS;
+
+	if(shouldFlush) {
+		void flushCaptionBuffer(socket, 'sentence-end-or-limit');
+		return;
+	}
+
+	const remaining = Math.max(500, CAPTION_BUFFER_MAX_MS - (now - buffer.firstAt));
+
+	buffer.timer = setTimeout(() => {
+		void flushCaptionBuffer(socket, 'timeout');
+	}, remaining);
+}
+
+function isProbablyBadTranscript(text: string) {
+	const clean = text
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}' ]/gu, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+
+	if(!clean) return true;
+
+	const words = clean.split(' ').filter(Boolean);
+	if(words.length === 0) return true;
+
+	// Ex: "a a a a", "euh euh euh", etc.
+	if(words.length >= 4 && new Set(words).size <= 2) {
+		return true;
+	}
+
+	// Ex: longues phrases très répétitives / hallucinations Whisper
+	if(words.length >= 12) {
+		const uniqueRatio = new Set(words).size / words.length;
+		if(uniqueRatio < 0.35) {
+			return true;
+		}
+	}
+
+	return false;
+}
 
 async function loadConfig(socket: TypedSocket) {
 	try{
@@ -228,15 +343,13 @@ async function transcribeLocalAudioSegment(socket: TypedSocket, buffer: Buffer) 
 
 		const text = typeof json.text === 'string' ? json.text.trim() : '';
 
-		if (text) {
-			await handleTranscript(socket, {
-				text,
-				lang: 'fr',
-				final: true,
-				lineEnd: true,
-				delay: 0,
-				duration: 5000,
-			});
+		if(text) {
+			if(isProbablyBadTranscript(text)) {
+				logger.warn(`[local-stt-client] ignored suspicious transcript: ${text}`);
+				return;
+			}
+
+			pushCaptionBuffer(socket, text, 'fr');
 		}
 	} catch (e) {
 		logger.error('[local-stt-client] failed to transcribe audio', e);
@@ -368,6 +481,8 @@ io.on('connect', (socket) => {
 		}));
 
 		socket.on('disconnect', () => {
+			void flushCaptionBuffer(socket, 'disconnect');
+
 			localAudioBusy.delete(socket.id);
 
 			endSession(socket);
@@ -397,8 +512,11 @@ io.on('connect', (socket) => {
 			await transcribeLocalAudioSegment(socket, buffer);
 		});
 
-		socket.on('audioEnd', () => {
+		socket.on('audioEnd', async () => {
 			logger.info(`[local-audio] end for ${socket.data.twitchId}`);
+
+			await flushCaptionBuffer(socket, 'audio-end');
+
 			localAudioBusy.delete(socket.id);
 		});
 

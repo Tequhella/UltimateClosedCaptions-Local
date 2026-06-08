@@ -11,7 +11,7 @@ import { config } from '../../config';
 interface TranslationServiceProps {
     translateService?: string
     configLoaded: boolean
-    updateConfig: (config: {translateService: '' | 'gcp'}) => Promise<void>
+    updateConfig: (config: {translateService: '' | 'gcp' | 'local'}) => Promise<void>
     loadingImg: string
 }
 
@@ -72,6 +72,26 @@ function TranslationService({ translateService, updateConfig, configLoaded, load
         });
     };
 
+    const enableLocalTranslation = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+
+        if (isLoadingSend) return;
+
+        setIsLoadingSend(true);
+
+        DelayedDisplay({
+            requestFn: async () => {
+                await updateConfig({translateService: 'local'});
+                await new Promise((res)=>setTimeout(res, 100));
+                reloadConfig();
+            },
+            successMessage: "Local translation has been enabled",
+            errorMessage: "An error occurred",
+            setIsLoading: setIsLoadingSend,
+            setResponse: setResponse,
+        });
+    };
+
     const closeResponse = () => {
         setResponse(null);
     };
@@ -90,7 +110,9 @@ function TranslationService({ translateService, updateConfig, configLoaded, load
                 />
             )}
             <div className="api-connected">
-                <h4>Connected!</h4>
+                <h4>
+                    Connected: {translateService === 'local' ? 'Local translation' : 'Google Translation API'}
+                </h4>
                 <button className="theme-btn" onClick={() => setIsEditing(true)}><span>Change</span></button>
             </div>
         </>
@@ -99,12 +121,14 @@ function TranslationService({ translateService, updateConfig, configLoaded, load
     return (
         <div className='api'>
             <p>
-                In this first version, translation is only available using Google Translation API
-                and requires you to create a Google Cloud account and provide your own API key.
+                You can use either local translation or Google Translation API.
             </p>
             <p>
-                Simpler ways to enable translation will be available later.
+                Local translation runs on your own computer and does not require a Google Cloud API key.
             </p>
+            <button className="theme-btn" onClick={enableLocalTranslation} type="button">
+                <span>{isLoadingSend ? 'Enabling...' : 'Use local translation'}</span>
+            </button>
             <form className='api-form'>
                 <p>Warning ! When using your own API keys, you are responsible for setting proper limits to avoid any unexpected billing</p>
                 {response && (

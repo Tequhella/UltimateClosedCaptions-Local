@@ -56,7 +56,7 @@ export const UserConfigSchema = z.object({
 	lastSpokenLang: z.string().optional(),
 	/*spokenLangs: z.array(z.string()).optional(),*/
 
-	translateService: z.enum(['', 'gcp']).default(''),
+	translateService: z.enum(['', 'gcp', 'local']).default(''),
 	translateLangs: z.array(z.string()).default([]),
 
 	twitchAutoStop: z.boolean().default(true),

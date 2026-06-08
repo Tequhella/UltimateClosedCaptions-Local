@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-const SEGMENT_MS = 5000;
+const SEGMENT_MS = 7000;
 
 export function useLocalAudioCapture({
     listening,

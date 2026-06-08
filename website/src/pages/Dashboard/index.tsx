@@ -36,7 +36,7 @@ interface UserConfig {
 	spokenLang: string
 	lastSpokenLang?: string
 	spokenLangs?: string[]
-	translateService: '' | 'gcp'
+	translateService: '' | 'gcp' | 'local'
 	translateLangs?: string[]
     banWords?: string[]
     twitchAutoStop?: boolean

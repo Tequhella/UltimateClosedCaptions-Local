@@ -76,22 +76,43 @@ export abstract class Translator {
 				data: cached
 			}
 		}else {
+			const targetLangs =
+				this.user.config.translateService === 'local'
+					? ['en']
+					: this.user.config.translateLangs.filter(t=>t!==lang);
+
+			logger.info(
+				`[translator] source=${lang}, targets=${JSON.stringify(targetLangs)}, service=${this.user.config.translateService}`
+			);
+
 			const translated = await this.translateAll(
 				{ text: data.text, lang },
-				// Exclude source language
-				this.user.config.translateLangs.filter(t=>t!==lang)
+				targetLangs
 			);
+
 			if(translated.isError) {
-				return translated;
+				return {
+					isError: true,
+					message: translated.message,
+				};
 			}
 
-			this.cache.set(data.text+data.lang, translated.data);
+			const translatedData =
+				this.user.config.translateService === 'local'
+					? translated.data.filter(t => t.lang === 'en')
+					: translated.data;
+
+			this.cache.set(data.text+data.lang, translatedData);
+
 			// Cache translation results a small time
 			setTimeout(()=>{
 				this.cache.delete(data.text+data.lang);
 			}, getCacheDelay(data.text));
 
-			return translated;
+			return {
+				isError: false,
+				data: translatedData,
+			};
 		}
 	}
 

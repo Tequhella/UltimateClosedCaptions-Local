@@ -32,7 +32,20 @@ services:
     container_name: captions-local-stt
     ports:
       - "5005:5005"
+    volumes:
+      - whisper-cache:/root/.cache/whisper
+
+  local-translate:
+    build:
+      context: ./local-translate
+    container_name: captions-local-translate
+    ports:
+      - "5006:5006"
+    volumes:
+      - translate-cache:/root/.local/share/argos-translate
 
 volumes: 
   captionsdb:
     external: true
+  whisper-cache:
+  translate-cache:
