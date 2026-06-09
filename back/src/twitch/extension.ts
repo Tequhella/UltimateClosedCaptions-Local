@@ -17,7 +17,20 @@ export async function isExtensionInstalled(user: string) {
 }
 
 export async function sendPubsub(userId: string, message: string) {
-	await sendExtensionPubSubBroadcastMessage({ clientId, secret, ownerId }, userId, message);
+	logger.info(
+		`Sending extension pubsub: clientId=${clientId}, ownerId=${ownerId}, userId=${userId}, messageLength=${message.length}`
+	);
+
+	try {
+		await sendExtensionPubSubBroadcastMessage(
+			{ clientId, secret, ownerId },
+			userId,
+			message
+		);
+	}catch(e) {
+		logger.error('Extension pubsub failed', e);
+		throw e;
+	}
 }
 
 export async function saveTwitchConfig(userId: string, config: string) {

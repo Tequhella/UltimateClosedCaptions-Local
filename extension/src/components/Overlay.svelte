@@ -15,7 +15,12 @@
 	// Broadcaster config
 	// false if broadcaster config not loaded yet
 	// true if config loaded but value undefined
-	$: captionsShown = $showCaptions ?? ( $broadcasterConfig ? $broadcasterConfig.showCaptions : false ) ?? true;
+	$: captionsShown = $showCaptions ?? $broadcasterConfig?.showCaptions ?? true;
+
+    $: console.log('[UCC EXT] captionsShown', captionsShown, {
+        showCaptions: $showCaptions,
+        broadcasterConfig: $broadcasterConfig,
+    });
 
 	function toggleCaptions(e: Event) {
 		e.preventDefault();
@@ -37,9 +42,7 @@
 
 <div id="ultimate-closed-caption">
 
-	{#if captionsShown || settingsShown }
-		<Captions bind:settingsShown />
-	{/if}
+	<Captions bind:settingsShown />
 
 	{#if settingsShown}
 		<Settings bind:settingsShown />

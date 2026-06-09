@@ -29,8 +29,13 @@ def ensure_model_installed():
         raise RuntimeError("No Argos package found for fr -> en")
 
     installed_languages = argostranslate.translate.get_installed_languages()
+
     already_installed = any(
-        lang.code == "fr" and any(t.code == "en" for t in lang.translations_from)
+        lang.code == "fr"
+        and any(
+            getattr(getattr(t, "to_lang", None), "code", None) == "en"
+            for t in lang.translations_from
+        )
         for lang in installed_languages
     )
 

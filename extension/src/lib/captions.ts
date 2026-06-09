@@ -29,34 +29,40 @@ export const lastReceivedCaptions = writable<Caption[]>([]);
 
 // Handle received captions
 export async function handleCaptions(data: CaptionsData) {
+	console.log('[UCC EXT] handleCaptions input', data);
+
 	lastReceivedCaptions.set(data.captions);
 	
 	const { delay, duration, ...newText } = data;
 
-	// Delay captions for stream latency minus accumulated processing delay
-	const waitTime = (( get(twitchContext)?.hlsLatencyBroadcaster || 4 ) * 1000) - delay;
+	const waitTime = Math.max(
+		0,
+		(( get(twitchContext)?.hlsLatencyBroadcaster || 4 ) * 1000) - delay
+	);
+
+	console.log('[UCC EXT] waitTime before display', waitTime);
+
 	await new Promise(res => setTimeout(res, waitTime));
 
 	transcript.update((transcript) => {
+		console.log('[UCC EXT] transcript before update', structuredClone(transcript));
 
-		// Index of last line from speaker
 		const lastLine = transcript.findLast(l => l[0].speaker===data.speaker);
 
 		if(lastLine && !lastLine[lastLine.length-1].lineEnd) {
-			// Last line from speaker not finished
-
 			if(lastLine[lastLine.length-1].final) {
-				// Last text was final: append after it
 				lastLine.push(newText);
 			}else{
-				// Last text was not final: replace it
 				lastLine[lastLine.length-1] = newText;
 			}
 		}else{
-			// Add text as a new line
 			transcript.push([newText]);
 		}
+
 		if(transcript.length > 50) transcript.shift();
+
+		console.log('[UCC EXT] transcript after update', structuredClone(transcript));
+
 		return transcript;
 	});
 }

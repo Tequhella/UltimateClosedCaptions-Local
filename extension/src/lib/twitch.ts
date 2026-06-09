@@ -32,24 +32,47 @@ export const broadcasterConfig = readable<BroadcasterConfig>(undefined, (set)=>{
 	});
 });
 
+
 let lastMessage = '';
-Twitch.ext.listen('broadcast', (_: string, contentType: string, message: string)=>{
+
+Twitch.ext.listen('broadcast', (target: string, contentType: string, message: string)=>{
+	console.log('[UCC EXT] broadcast received', {
+		target,
+		contentType,
+		message,
+	});
+
 	// Ignore if exactly same message is received twice
 	if(lastMessage === message) {
+		console.log('[UCC EXT] duplicate message ignored');
 		return;
 	}
 	lastMessage = message;
 
 	if (contentType !== 'application/json') {
-		console.error('Ultimate CC : Pubsub content-type is not JSON');
+		console.error('Ultimate CC : Pubsub content-type is not JSON', contentType);
 		return;
 	}
 
-	const obj: CaptionsData = JSON.parse(message);
-	if(Array.isArray(obj.captions) && obj.captions.length) {
-		handleCaptions(obj)
-			.catch(e => {
-				console.error('Ultimate CC : Error handling captions', e);
-			});
+	try {
+		const obj: CaptionsData = JSON.parse(message);
+
+		console.log('[UCC EXT] parsed message', obj);
+
+		if(Array.isArray(obj.captions) && obj.captions.length) {
+			console.log('[UCC EXT] captions received', obj.captions);
+
+			handleCaptions(obj)
+				.then(() => {
+					console.log('[UCC EXT] captions handled');
+				})
+				.catch(e => {
+					console.error('Ultimate CC : Error handling captions', e);
+				});
+		}else{
+			console.warn('[UCC EXT] message has no captions', obj);
+		}
+	}catch(e) {
+		console.error('[UCC EXT] failed to parse broadcast message', e, message);
 	}
 });

@@ -5,6 +5,13 @@
 	import { getContext } from "svelte";
 	import type { Resetable } from "../lib/stores/resetablePersisted";
 	import { settings, position } from "../lib/settings";
+    import { onMount } from "svelte";
+
+    onMount(() => {
+        console.log('[UCC EXT] Captions component mounted');
+    });
+
+    $: console.log('[UCC EXT] Captions transcript state', $transcript);
 
 	const language = getContext<Resetable<LangCode>>('language');
 
